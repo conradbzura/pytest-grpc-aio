@@ -1,0 +1,47 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+
+[project]
+authors = [
+    { name = "Conrad Bzura", email = "conradbzura@gmail.com" }
+]
+classifiers = [
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS :: MacOS X",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Utilities",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = ["pytest>=3.6.0"]
+description = "pytest plugin for grpc.aio"
+dynamic = ["version"]
+license-files = ["LICENSE"]
+name = "pytest-grpc-aio"
+readme = "README.md"
+requires-python = ">=3.6"
+
+[project.entry-points.pytest11]
+pytest-grpc-aio = "pytest_grpc_aio.plugin"
+
+[project.urls]
+Homepage = "https://github.com/conradbzura/pytest-grpc-aio"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools_scm]
+local_scheme = "dirty-tag"
+version_scheme = "release-branch-semver"
