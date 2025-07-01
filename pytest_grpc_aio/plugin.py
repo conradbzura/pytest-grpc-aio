@@ -1,4 +1,3 @@
-import asyncio
 import socket
 from concurrent import futures
 
@@ -285,8 +284,8 @@ def grpc_aio_create_channel(request, grpc_addr, grpc_aio_server):
 
 
 @pytest_asyncio.fixture(scope="module")
-async def grpc_aio_channel(grpc_create_channel):
-    async with grpc_create_channel() as channel:
+async def grpc_aio_channel(grpc_aio_create_channel):
+    async with grpc_aio_create_channel() as channel:
         yield channel
 
 
