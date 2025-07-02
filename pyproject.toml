@@ -39,6 +39,21 @@ pytest-grpc-aio = "pytest_grpc_aio.plugin"
 [project.urls]
 Homepage = "https://github.com/conradbzura/pytest-grpc-aio"
 
+[tool.ruff]
+line-length = 89
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+[tool.ruff.lint.isort] 
+combine-as-imports = false
+force-single-line = true
+known-first-party = ["pytest_grpc_aio"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 
