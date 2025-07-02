@@ -1,14 +1,35 @@
+from __future__ import annotations
+
 import socket
 from concurrent import futures
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
+from typing import Any
+from typing import AsyncContextManager
+from typing import AsyncGenerator
+from typing import Callable
+from typing import ContextManager
+from typing import Generator
+from typing import List
+from typing import Protocol
+from typing import Type
+from typing import TypeVar
 
 import grpc
 import grpc.aio
 import pytest
-import pytest_asyncio
 from grpc._cython.cygrpc import CompositeChannelCredentials
 from grpc._cython.cygrpc import _Metadatum
+
+
+class GrpcStub(Protocol):
+    def __init__(
+        self, channel: grpc.Channel | grpc.aio.Channel | FakeChannel | FakeAioChannel
+    ): ...
+
+
+T_GrpcStub = TypeVar("T_GrpcStub", bound=GrpcStub)
+T_GrpcServicer = TypeVar("T_GrpcServicer")
 
 
 def pytest_addoption(parser):
@@ -113,20 +134,31 @@ class FakeChannel:
 
 
 @pytest.fixture(scope="function")
-def grpc_addr():
+def grpc_addr() -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("localhost", 0))
-    return "localhost:{}".format(sock.getsockname()[1])
+    return f"localhost:{sock.getsockname()[1]}"
 
 
 @pytest.fixture(scope="function")
-def grpc_interceptors():
+def grpc_interceptors() -> List[grpc.aio.ServerInterceptor] | None:
     return
 
 
 @pytest.fixture(scope="function")
+def grpc_servicer() -> object:
+    raise NotImplementedError
+
+
+@pytest.fixture(scope="function")
 def grpc_server(
-    request, grpc_addr, grpc_add_to_server, grpc_servicer, grpc_interceptors
+    request: pytest.FixtureRequest,
+    grpc_addr: str,
+    grpc_add_to_server: Callable[
+        [T_GrpcServicer, grpc.Server | FakeServer],
+    ],
+    grpc_servicer: T_GrpcServicer,
+    grpc_interceptors: List[grpc.ServerInterceptor] | None,
 ):
     @contextmanager
     def _grpc_server():
@@ -151,9 +183,15 @@ def grpc_server(
 
 
 @pytest.fixture(scope="function")
-def grpc_channel(request, grpc_addr, grpc_server):
+def grpc_channel(
+    request: pytest.FixtureRequest,
+    grpc_addr: str,
+    grpc_server: Callable[[], ContextManager[grpc.Server | FakeServer]],
+):
     @contextmanager
-    def _grpc_channel(credentials=None, options=None):
+    def _grpc_channel(
+        credentials: grpc.ChannelCredentials | None = None, options=None
+    ) -> Generator[grpc.Channel | FakeChannel]:
         with grpc_server() as server:
             if request.config.getoption("grpc-fake"):
                 yield FakeChannel(server, credentials)
@@ -166,16 +204,23 @@ def grpc_channel(request, grpc_addr, grpc_server):
 
 
 @pytest.fixture(scope="function")
-def grpc_stub(grpc_stub_cls, grpc_channel):
+def grpc_stub(
+    grpc_stub_cls: Type[T_GrpcStub],
+    grpc_channel: Callable[
+        [grpc.ChannelCredentials | None, Any], ContextManager[grpc.Channel | FakeChannel]
+    ],
+) -> Callable[[grpc.ChannelCredentials | None, Any], ContextManager[T_GrpcStub]]:
     @contextmanager
-    def _grpc_stub():
-        with grpc_channel() as channel:
+    def _grpc_stub(
+        credentials: grpc.ChannelCredentials | None = None, options=None
+    ) -> Generator[T_GrpcStub]:
+        with grpc_channel(credentials, options) as channel:
             yield grpc_stub_cls(channel)
 
     return _grpc_stub
 
 
-class FakeAIOServer(object):
+class FakeAioServer(object):
     def __init__(self, pool):
         self.handlers = {}
         self.pool = pool
@@ -200,7 +245,7 @@ class FakeAIOServer(object):
         pass
 
 
-class FakeAIOChannel:
+class FakeAioChannel:
     def __init__(self, fake_server, credentials):
         self.server = fake_server
         self._credentials = credentials
@@ -250,10 +295,17 @@ class FakeAIOChannel:
 
 @pytest.fixture(scope="function")
 def grpc_aio_server(
-    request, grpc_addr, grpc_add_to_server, grpc_servicer, grpc_interceptors
-):
+    request: pytest.FixtureRequest,
+    grpc_addr: str,
+    grpc_add_to_server: Callable[
+        [T_GrpcServicer, grpc.Server | grpc.aio.Server | FakeServer | FakeAioServer],
+        None,
+    ],
+    grpc_servicer: T_GrpcServicer,
+    grpc_interceptors: List[grpc.aio.ServerInterceptor],
+) -> Callable[[], AsyncContextManager[grpc.aio.Server | FakeAioServer]]:
     @asynccontextmanager
-    async def _grpc_aio_server():
+    async def _grpc_aio_server() -> AsyncGenerator[grpc.aio.Server | FakeAioServer]:
         max_workers = request.config.getoption("grpc-max-workers")
         try:
             max_workers = max(request.module.grpc_max_workers, max_workers)
@@ -261,7 +313,7 @@ def grpc_aio_server(
             pass
         pool = futures.ThreadPoolExecutor(max_workers=max_workers)
         if request.config.getoption("grpc-fake"):
-            server = FakeAIOServer(pool)
+            server = FakeAioServer(pool)
         else:
             server = grpc.aio.server(pool, interceptors=grpc_interceptors)
         grpc_add_to_server(grpc_servicer, server)
@@ -275,12 +327,18 @@ def grpc_aio_server(
 
 
 @pytest.fixture(scope="function")
-def grpc_aio_channel(request, grpc_addr, grpc_aio_server):
+def grpc_aio_channel(
+    request: pytest.FixtureRequest,
+    grpc_addr: str,
+    grpc_aio_server: Callable[[], AsyncContextManager[grpc.aio.Server]],
+) -> Callable[[], AsyncContextManager[grpc.aio.Channel | FakeAioChannel]]:
     @asynccontextmanager
-    async def _grpc_aio_channel(credentials=None, options=None):
+    async def _grpc_aio_channel(
+        credentials: grpc.ChannelCredentials | None = None, options=None
+    ) -> AsyncGenerator[grpc.aio.Channel | FakeAioChannel]:
         async with grpc_aio_server() as server:
             if request.config.getoption("grpc-fake"):
-                yield FakeAIOChannel(server, credentials)
+                yield FakeAioChannel(server, credentials)
             elif credentials is not None:
                 yield grpc.aio.secure_channel(grpc_addr, credentials, options)
             else:
@@ -290,10 +348,17 @@ def grpc_aio_channel(request, grpc_addr, grpc_aio_server):
 
 
 @pytest.fixture(scope="function")
-def grpc_aio_stub(grpc_stub_cls, grpc_aio_channel):
+def grpc_aio_stub(
+    grpc_stub_cls: Type[T_GrpcStub],
+    grpc_aio_channel: Callable[
+        [grpc.ChannelCredentials | None, Any], AsyncContextManager[grpc.aio.Channel]
+    ],
+) -> Callable[[], AsyncContextManager[T_GrpcStub]]:
     @asynccontextmanager
-    async def _grpc_aio_stub():
-        async with grpc_aio_channel() as channel:
+    async def _grpc_aio_stub(
+        credentials: grpc.ChannelCredentials | None = None, options=None
+    ) -> AsyncGenerator[T_GrpcStub]:
+        async with grpc_aio_channel(credentials, options) as channel:
             yield grpc_stub_cls(channel)
 
     return _grpc_aio_stub
