@@ -5,3 +5,5 @@ dist
 example/src/stub/test_pb2.py
 example/src/stub/test_pb2_grpc.py
 .venv
+__pycache__
+*.pyc
